@@ -29,6 +29,7 @@ async function loadData() {
   });
 
   populateUniFilter();
+  populateProgUniFilter();
   renderUniversities();
   renderPrograms();
 }
@@ -89,28 +90,6 @@ function renderUniversities() {
 }
 
 function showUniDetail(u) {
-  const courses = allCourses.filter(c => c.university_id === u.id);
-  const programs = allPrograms.filter(p => p.university_id === u.id);
-
-  const courseRows = courses.slice(0, 300).map(c => `
-    <tr>
-      <td><strong>${c.code || "—"}</strong></td>
-      <td>${c.name}</td>
-      <td>${c.level || "—"}</td>
-      <td>${c.prerequisites_text || "—"}</td>
-    </tr>
-  `).join("");
-
-  const programCards = programs.map(p => `
-    <div style="padding:.5rem 0;border-bottom:1px solid var(--border)">
-      <strong>${p.name}</strong>
-      <span style="color:var(--muted);font-size:.82rem;margin-left:.5rem">${p.degree_type} · ${p.faculty || ""}</span>
-      <div style="font-size:.82rem;margin-top:.25rem;color:var(--muted)">
-        Acceptance: ${pct(p.acceptance_rate)} &nbsp;|&nbsp; Domestic: ${cad(p.domestic_tuition)}/yr
-      </div>
-    </div>
-  `).join("");
-
   showModal(`
     <h2>${u.name}</h2>
     <div class="modal-section">
@@ -124,56 +103,39 @@ function showUniDetail(u) {
         <div class="modal-kv"><span>Intl Tuition</span><span>${cad(u.international_tuition_min)} – ${cad(u.international_tuition_max)}/yr</span></div>
       </div>
     </div>
-
-    ${programs.length ? `
-    <div class="modal-section">
-      <h4>Programs (${programs.length})</h4>
-      ${programCards}
-    </div>` : ""}
-
-    ${courses.length ? `
-    <div class="modal-section">
-      <h4>Courses (${courses.length}${courses.length === 300 ? "+" : ""})</h4>
-      <div style="overflow-x:auto">
-        <table style="width:100%;font-size:.82rem;border-collapse:collapse">
-          <thead><tr style="text-align:left;border-bottom:2px solid var(--border)">
-            <th style="padding:.4rem .6rem">Code</th>
-            <th style="padding:.4rem .6rem">Name</th>
-            <th style="padding:.4rem .6rem">Level</th>
-            <th style="padding:.4rem .6rem">Prerequisites</th>
-          </tr></thead>
-          <tbody>${courseRows}</tbody>
-        </table>
-      </div>
-    </div>` : "<p style='color:var(--muted);font-size:.85rem'>No course data scraped yet for this university.</p>"}
   `);
 }
 
 document.getElementById("uni-province").addEventListener("change", renderUniversities);
 
+const CATEGORIES = {
+  "All":          [],
+  "Life Science": ["biology", "animal", "veterinar", "wildlife", "marine", "aquatic", "fisheries", "ocean", "ecology", "zoology", "biomedical"],
+  "Health":       ["health", "kinesiology", "nursing", "nutrition", "pharmacy", "medical", "physiother"],
+  "Computer Science": ["computer", "computing", "software", "data science", "artificial intelligence"],
+  "Engineering":  ["engineering", "mechanical", "electrical", "civil", "chemical"],
+  "Business":     ["commerce", "business", "management", "finance", "accounting", "economics"],
+  "Math & Stats": ["math", "statistics", "actuarial"],
+  "Arts & Social": ["arts", "humanities", "social", "psychology", "political", "sociology", "history", "philosophy"],
+  "Environment":  ["environment", "conservation", "sustainability", "forestry", "geography"],
+};
+
 // ── Programs ───────────────────────────────────────────
 function renderPrograms() {
-  const field   = document.getElementById("prog-field").value.trim().toLowerCase();
-  const degree  = document.getElementById("prog-degree").value;
-
-  const sortBy  = document.getElementById("prog-sort").value;
-  const grid    = document.getElementById("prog-grid");
+  const uniId    = document.getElementById("prog-uni").value;
+  const category = document.getElementById("prog-category").value;
+  const sortBy   = document.getElementById("prog-sort").value;
+  const grid     = document.getElementById("prog-grid");
 
   let data = allPrograms;
-  if (field) {
-    // Expand common shorthand searches to related terms
-    const ALIASES = {
-      animal: ["animal", "veterinar", "wildlife", "marine", "aquatic", "fisheries", "ocean", "biology"],
-      vet:    ["veterinar", "animal", "biomedical", "health science"],
-      marine: ["marine", "ocean", "aquatic", "fisheries"],
-    };
-    const terms = ALIASES[field] || [field];
+  if (uniId) data = data.filter(p => p.university_id == uniId);
+  if (category && category !== "All") {
+    const terms = CATEGORIES[category] || [];
     data = data.filter(p => {
       const hay = `${p.name} ${p.field || ""} ${p.faculty || ""}`.toLowerCase();
       return terms.some(t => hay.includes(t));
     });
   }
-  if (degree) data = data.filter(p => p.degree_type === degree);
 
 
   if (sortBy === "acceptance_rate") data.sort((a, b) => (a.acceptance_rate ?? 1) - (b.acceptance_rate ?? 1));
@@ -251,9 +213,20 @@ function showProgDetail(p) {
   `);
 }
 
-document.getElementById("prog-search-btn").addEventListener("click", renderPrograms);
+document.getElementById("prog-uni").addEventListener("change", renderPrograms);
+document.getElementById("prog-category").addEventListener("change", renderPrograms);
+document.getElementById("prog-sort").addEventListener("change", renderPrograms);
 
 // ── Courses ────────────────────────────────────────────
+function populateProgUniFilter() {
+  const sel = document.getElementById("prog-uni");
+  allUniversities.forEach(u => {
+    const o = document.createElement("option");
+    o.value = u.id; o.text = u.name;
+    sel.add(o);
+  });
+}
+
 function populateUniFilter() {
   const sel = document.getElementById("course-uni");
   allUniversities.forEach(u => {

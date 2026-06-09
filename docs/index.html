@@ -42,20 +42,25 @@
     <!-- ── PROGRAMS TAB ───────────────────────────────────── -->
     <section id="tab-programs" class="tab-content">
       <div class="filters">
-        <input type="text" id="prog-field" placeholder="Field (e.g. Computer Science)" />
-        <select id="prog-degree">
-          <option value="">Any degree type</option>
-          <option>BSc</option><option>BA</option><option>BEng</option>
-          <option>BCom</option><option>BCS</option><option>BSE</option><option>BHSc</option>
+        <select id="prog-uni">
+          <option value="">All Universities</option>
         </select>
-
+        <select id="prog-category">
+          <option value="All">All Categories</option>
+          <option>Life Science</option>
+          <option>Health</option>
+          <option>Computer Science</option>
+          <option>Engineering</option>
+          <option>Business</option>
+          <option>Math &amp; Stats</option>
+          <option>Arts &amp; Social</option>
+          <option>Environment</option>
+        </select>
         <select id="prog-sort">
-          <option value="program_rank_national">Sort: National Rank</option>
+          <option value="rank">Sort: National Rank</option>
           <option value="acceptance_rate">Sort: Acceptance Rate</option>
-          <option value="domestic_tuition">Sort: Domestic Tuition</option>
-          <option value="typical_admission_average">Sort: Admission Average</option>
+          <option value="tuition">Sort: Domestic Tuition</option>
         </select>
-        <button id="prog-search-btn" class="btn-primary">Search</button>
       </div>
       <div id="prog-grid" class="card-grid"></div>
     </section>
