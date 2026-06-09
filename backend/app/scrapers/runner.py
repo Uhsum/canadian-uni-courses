@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 from app.scrapers.uoft import UofTScraper
 from app.scrapers.ubc import UBCScraper
 from app.scrapers.mcgill import McGillScraper
+from app.scrapers.targeted_animal_welfare import AnimalWelfareTargetedScraper
 from app.scrapers.waterloo import WaterlooScraper
 from app.scrapers.mcmaster import McMasterScraper
 from app.scrapers.ualberta import UAlbertaScraper
@@ -29,6 +30,20 @@ SCRAPERS = {
     "Dal":      DalhouisieScraper,
     "MUN":      MUNScraper,
 }
+
+
+def run_animal_welfare_targeted(db: Session):
+    """Run the targeted animal welfare scraper for UBC, McGill, and MUN."""
+    s = AnimalWelfareTargetedScraper(db)
+    loop = asyncio.new_event_loop()
+    try:
+        results = {}
+        results["UBC"] = loop.run_until_complete(s.scrape_ubc(db))
+        results["McGill"] = loop.run_until_complete(s.scrape_mcgill(db))
+        results["MUN"] = loop.run_until_complete(s.scrape_mun(db))
+    finally:
+        loop.close()
+    return results
 
 
 def run_scraper(university_short: str, db: Session):

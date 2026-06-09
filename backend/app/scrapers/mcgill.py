@@ -1,35 +1,67 @@
 """
-Scraper for McGill University course catalogue.
-Source: https://www.mcgill.ca/study/2024-2025/courses/<dept-code>
-        e.g. /courses/comp, /courses/math, /courses/phys
+Scraper for McGill University courses.
 
-McGill moved their full search to coursecatalogue.mcgill.ca (requires JS),
-but individual department pages on the eCalendar still serve static HTML.
+McGill's search portal and department pages require login (as of 2024-25).
+Individual course pages are still publicly accessible at:
+  https://www.mcgill.ca/study/2024-2025/courses/{dept_lower}-{num}
+
+Strategy:
+  1. Use known McGill department codes and typical course number ranges.
+  2. Fetch each course URL; 200 + valid h1 = real course; 404/redirect = skip.
+  3. Parse course name, description, and prerequisites from the page div.
+
+We limit to undergrad range (100–499) for each department.
 """
 import httpx
 import re
+import asyncio
 from app.scrapers.base import BaseScraper
 from app.models.models import University, Course
 
-BASE = "https://www.mcgill.ca"
+BASE = "https://www.mcgill.ca/study/2024-2025/courses"
 
-# Common McGill department codes (lowercase URL slugs)
+# McGill undergrad department codes → typical course number suffixes used
+# Format: (dept_code, url_prefix, number_range_step)
 DEPARTMENTS = [
-    "acct", "anat", "anth", "arab", "arth", "biol", "chem", "chin",
-    "comm", "comp", "econ", "edpe", "educ", "engl", "engr", "envr",
-    "epib", "exer", "fina", "fren", "geog", "geol", "germ", "hist",
-    "ital", "japn", "kine", "lang", "lasc", "law", "ling", "lsci",
-    "math", "mech", "mgmt", "mimm", "mjhc", "mrkt", "mumt", "musi",
-    "neur", "nsci", "nutr", "occh", "phar", "phil", "phgy", "phys",
-    "poli", "psyc", "ptot", "relg", "rusa", "soci", "span", "stat",
-    "surg", "swrk", "theo", "urbp",
+    # Science
+    ("COMP", "comp",  list(range(202, 600, 1))),
+    ("MATH", "math",  list(range(111, 600, 1))),
+    ("BIOL", "biol",  list(range(111, 600, 1))),
+    ("CHEM", "chem",  list(range(110, 500, 1))),
+    ("PHYS", "phys",  list(range(101, 500, 1))),
+    ("PSYC", "psyc",  list(range(100, 500, 1))),
+    ("STAT", "stat",  list(range(204, 460, 1))),
+    ("MICR", "micr",  list(range(230, 500, 1))),
+    ("ANAT", "anat",  list(range(212, 460, 1))),
+    ("NSCI", "nsci",  list(range(200, 420, 1))),
+    # Engineering
+    ("ECSE", "ecse",  list(range(200, 500, 1))),
+    ("MECH", "mech",  list(range(210, 500, 1))),
+    ("CIVE", "cive",  list(range(200, 490, 1))),
+    ("CHEE", "chee",  list(range(200, 490, 1))),
+    # Arts & Social Sciences
+    ("ECON", "econ",  list(range(208, 460, 1))),
+    ("POLI", "poli",  list(range(200, 490, 1))),
+    ("SOCI", "soci",  list(range(202, 490, 1))),
+    ("HIST", "hist",  list(range(200, 490, 1))),
+    ("ENGL", "engl",  list(range(200, 490, 1))),
+    ("PHIL", "phil",  list(range(210, 490, 1))),
+    # Management
+    ("MGCR", "mgcr",  list(range(211, 430, 1))),
+    ("FINE", "fine",  list(range(340, 490, 1))),
+    # Health Sciences
+    ("EPIB", "epib",  list(range(301, 490, 1))),
+    ("NUTR", "nutr",  list(range(201, 460, 1))),
+    ("EXER", "exer",  list(range(201, 460, 1))),
+    ("KINE", "kine",  list(range(200, 490, 1))),
 ]
 
 
 class McGillScraper(BaseScraper):
     name = "mcgill_courses"
     university_short = "McGill"
-    delay = 1.5
+    # Lower delay since most URLs will 404 quickly
+    delay = 0.3
 
     async def scrape(self) -> int:
         uni = self.db.query(University).filter_by(short_name="McGill").first()
@@ -37,83 +69,71 @@ class McGillScraper(BaseScraper):
             raise ValueError("McGill not found in DB — run seed first")
 
         count = 0
-        async with httpx.AsyncClient(timeout=30) as client:
-            for dept in DEPARTMENTS:
-                url = f"{BASE}/study/2024-2025/courses/{dept}"
-                try:
-                    soup = await self.fetch(url, client)
-                except Exception:
-                    continue
-
-                # Courses appear as <div class="view-content"> containing
-                # <li> or heading elements with title + body
-                # Try to find course entries by looking for h3/h4 with codes
-                course_blocks = soup.select(
-                    "div.views-row, li.views-row, .course-block, article"
-                )
-                if not course_blocks:
-                    # Fall back: parse text for patterns like "COMP 202 - Name"
-                    text = soup.get_text("\n")
-                    for m in re.finditer(
-                        r"([A-Z]{2,5})\s+(\d{3}[A-Z]?)\s*[-–]\s*([^\n]{3,80})", text
-                    ):
-                        dept_code = m.group(1)
-                        num = m.group(2)
-                        name = m.group(3).strip()
-                        code = f"{dept_code} {num}"
-                        level_m = re.search(r"(\d)", num)
-                        level = int(level_m.group(1)) * 100 if level_m else None
-
-                        existing = self.db.query(Course).filter_by(
-                            university_id=uni.id, code=code
-                        ).first()
-                        obj = existing or Course(university_id=uni.id, code=code)
-                        if not existing:
-                            self.db.add(obj)
-                        obj.name = name
-                        obj.level = level
-                        obj.url = f"{BASE}/study/2024-2025/courses/{dept_code.lower()}-{num.lower()}"
-                        count += 1
-                    continue
-
-                for block in course_blocks:
-                    text = block.get_text("\n", strip=True)
-                    lines = [l.strip() for l in text.splitlines() if l.strip()]
-                    if not lines:
+        async with httpx.AsyncClient(timeout=15) as client:
+            for dept_code, url_prefix, numbers in DEPARTMENTS:
+                for num in numbers:
+                    url = f"{BASE}/{url_prefix}-{num}"
+                    try:
+                        await asyncio.sleep(self.delay)
+                        resp = await client.get(url, headers=self.HEADERS, follow_redirects=False)
+                    except Exception:
                         continue
-                    m = re.match(
-                        r"([A-Z]{2,5})\s+(\d{3}[A-Z]?)\s*[-–]\s*(.+?)(?:\s+\(\d+\s+credits?\))?$",
-                        lines[0],
+
+                    # Skip 404s and redirects quickly
+                    if resp.status_code != 200:
+                        continue
+
+                    from bs4 import BeautifulSoup
+                    soup = BeautifulSoup(resp.text, "lxml")
+                    h1 = soup.find("h1")
+                    if not h1:
+                        continue
+
+                    title = h1.get_text(strip=True)
+                    # Verify it matches our expected code
+                    expected = f"{dept_code} {num}"
+                    if not title.startswith(expected):
+                        continue
+
+                    # Extract name — title format: "COMP 202 Course Name (N credits)"
+                    name_m = re.match(
+                        rf"{re.escape(expected)}\s+(.*?)(?:\s+\(\d+\s+credits?\))?$",
+                        title,
                     )
-                    if not m:
-                        continue
-                    dept_code, num, name = m.group(1), m.group(2), m.group(3).strip()
-                    code = f"{dept_code} {num}"
-                    level_m = re.search(r"(\d)", num)
+                    name = name_m.group(1).strip() if name_m else title
+
+                    # Content is in a large unstyled div — find the paragraph after the title
+                    full_text = soup.get_text("\n")
+                    # Find section after the course code heading
+                    code_pos = full_text.find(expected)
+                    window = full_text[code_pos:code_pos + 800] if code_pos >= 0 else ""
+
+                    # Extract description (skip "Offered by:" line)
+                    desc_m = re.search(r"Overview\s*(.*?)(?:Prerequisite|Restriction|Note|$)", window, re.S)
+                    desc = re.sub(r"\s+", " ", desc_m.group(1)).strip()[:1000] if desc_m else ""
+
+                    prereq_m = re.search(r"Prerequisite[s]?[:\s]+([^.]+\.)", window, re.I)
+                    prereqs = prereq_m.group(1).strip() if prereq_m else ""
+
+                    level_m = re.search(r"(\d)", str(num))
                     level = int(level_m.group(1)) * 100 if level_m else None
 
-                    desc = " ".join(lines[1:3]) if len(lines) > 1 else ""
-                    prereqs = ""
-                    for line in lines:
-                        if re.match(r"Prerequisite[s]?:", line, re.I):
-                            prereqs = re.sub(r"Prerequisite[s]?:\s*", "", line, flags=re.I)
-
-                    link = block.select_one("a")
-                    course_url = BASE + link["href"] if link and link.get("href") else \
-                        f"{BASE}/study/2024-2025/courses/{dept_code.lower()}-{num.lower()}"
-
                     existing = self.db.query(Course).filter_by(
-                        university_id=uni.id, code=code
+                        university_id=uni.id, code=expected
                     ).first()
-                    obj = existing or Course(university_id=uni.id, code=code)
+                    obj = existing or Course(university_id=uni.id, code=expected)
                     if not existing:
                         self.db.add(obj)
+
                     obj.name = name
                     obj.description = desc
                     obj.level = level
                     obj.prerequisites_text = prereqs
-                    obj.url = course_url
+                    obj.url = url
                     count += 1
+
+                    if count % 50 == 0:
+                        self.db.flush()
 
         self.db.commit()
         return count
