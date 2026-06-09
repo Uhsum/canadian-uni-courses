@@ -1,21 +1,24 @@
 """
 Scraper for UBC course calendar.
-Source: UBC Course Schedule API (public JSON, used by SSC)
+Source: https://www.calendar.ubc.ca/vancouver/courses.cfm
+        Static HTML A-Z department listing, no JS required.
 """
 import httpx
 import re
 from app.scrapers.base import BaseScraper
 from app.models.models import University, Course
 
-UBC_SUBJECTS_URL = "https://courses.students.ubc.ca/cs/courseschedule?pname=subjarea&tname=subjareas"
-UBC_SUBJECT_URL = "https://courses.students.ubc.ca/cs/courseschedule?pname=subjarea&tname=subj-all-departments&department={dept}"
-UBC_COURSE_URL = "https://courses.students.ubc.ca/cs/courseschedule?pname=subjarea&tname=subj-course&dept={dept}&course={num}"
+BASE = "https://www.calendar.ubc.ca/vancouver"
+# Each letter page lists all departments starting with that letter
+ALPHA_URL = BASE + "/courses.cfm?page={letter}"
+# Department course page
+DEPT_URL = BASE + "/courses.cfm?page=all&dept={code}"
 
 
 class UBCScraper(BaseScraper):
     name = "ubc_courses"
     university_short = "UBC"
-    delay = 2.0
+    delay = 1.5
 
     async def scrape(self) -> int:
         uni = self.db.query(University).filter_by(short_name="UBC").first()
@@ -24,31 +27,50 @@ class UBCScraper(BaseScraper):
 
         count = 0
         async with httpx.AsyncClient(timeout=30) as client:
-            # Get list of departments
-            soup = await self.fetch(UBC_SUBJECTS_URL, client)
-            dept_links = soup.select("table.table tbody tr td a")
-            depts = [a.get_text(strip=True) for a in dept_links if a.get_text(strip=True)]
-
-            for dept in depts[:30]:  # cap at 30 depts for initial run
-                dept_url = UBC_SUBJECT_URL.format(dept=dept)
+            # 1. Collect all department codes from the A-Z index
+            dept_codes = set()
+            for letter in "ABCDEFGHIJKLMNOPQRSTUVWXYZ":
                 try:
-                    dept_soup = await self.fetch(dept_url, client)
+                    soup = await self.fetch(ALPHA_URL.format(letter=letter), client)
+                except Exception:
+                    continue
+                for a in soup.select("a[href*='dept=']"):
+                    href = a.get("href", "")
+                    m = re.search(r"dept=([A-Z]+)", href)
+                    if m:
+                        dept_codes.add(m.group(1))
+
+            # 2. For each department, scrape the course list
+            for dept in sorted(dept_codes):
+                try:
+                    soup = await self.fetch(DEPT_URL.format(code=dept), client)
                 except Exception:
                     continue
 
-                rows = dept_soup.select("table.table tbody tr")
-                for row in rows:
-                    cols = row.find_all("td")
-                    if len(cols) < 2:
+                # UBC calendar uses <dt> for course title, <dd> for description
+                for dt in soup.select("dt"):
+                    title = dt.get_text(strip=True)
+                    # Format: "CPSC 110 (4) Computation, Programs, and Programming"
+                    m = re.match(
+                        r"([A-Z]+)\s+(\d{3}[A-Z]?)\s*(?:\([^)]+\))?\s*[-–]?\s*(.+)",
+                        title,
+                    )
+                    if not m:
                         continue
-                    course_num = cols[0].get_text(strip=True)
-                    course_name = cols[1].get_text(strip=True)
-                    if not course_num or not course_name:
-                        continue
+                    dept_code = m.group(1)
+                    num = m.group(2)
+                    name = m.group(3).strip()
+                    code = f"{dept_code} {num}"
+                    level_m = re.search(r"(\d)", num)
+                    level = int(level_m.group(1)) * 100 if level_m else None
 
-                    code = f"{dept} {course_num}"
-                    level_match = re.match(r"(\d)", course_num)
-                    level = int(level_match.group(1)) * 100 if level_match else None
+                    # Description from following <dd>
+                    dd = dt.find_next_sibling("dd")
+                    description = dd.get_text(strip=True) if dd else ""
+
+                    # Prereqs from description
+                    prereq_m = re.search(r"Prerequisite[s]?[:\s]+([^.]+\.)", description, re.I)
+                    prereqs = prereq_m.group(1).strip() if prereq_m else ""
 
                     existing = self.db.query(Course).filter_by(
                         university_id=uni.id, code=code
@@ -57,9 +79,11 @@ class UBCScraper(BaseScraper):
                     if not existing:
                         self.db.add(obj)
 
-                    obj.name = course_name
+                    obj.name = name
+                    obj.description = description[:1000]
                     obj.level = level
-                    obj.url = UBC_COURSE_URL.format(dept=dept, num=course_num)
+                    obj.prerequisites_text = prereqs
+                    obj.url = DEPT_URL.format(code=dept)
                     count += 1
 
         self.db.commit()
