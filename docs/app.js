@@ -128,12 +128,24 @@ document.getElementById("uni-province").addEventListener("change", renderUnivers
 function renderPrograms() {
   const field   = document.getElementById("prog-field").value.trim().toLowerCase();
   const degree  = document.getElementById("prog-degree").value;
-  const tuition = parseInt(document.getElementById("prog-tuition").value) || Infinity;
+  const tuition = parseInt(document.getElementById("prog-tuition").value) || 25000;
   const sortBy  = document.getElementById("prog-sort").value;
   const grid    = document.getElementById("prog-grid");
 
   let data = allPrograms;
-  if (field)  data = data.filter(p => (p.field || "").toLowerCase().includes(field) || p.name.toLowerCase().includes(field));
+  if (field) {
+    // Expand common shorthand searches to related terms
+    const ALIASES = {
+      animal: ["animal", "veterinar", "wildlife", "marine", "aquatic", "fisheries", "ocean", "biology"],
+      vet:    ["veterinar", "animal", "biomedical", "health science"],
+      marine: ["marine", "ocean", "aquatic", "fisheries"],
+    };
+    const terms = ALIASES[field] || [field];
+    data = data.filter(p => {
+      const hay = `${p.name} ${p.field || ""} ${p.faculty || ""}`.toLowerCase();
+      return terms.some(t => hay.includes(t));
+    });
+  }
   if (degree) data = data.filter(p => p.degree_type === degree);
   data = data.filter(p => p.domestic_tuition == null || p.domestic_tuition <= tuition);
 
