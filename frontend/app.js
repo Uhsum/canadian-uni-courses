@@ -1,9 +1,37 @@
-const API = "http://localhost:8000";
+// ── Data store (loaded once from static JSON) ──────────
+let allUniversities = [];
+let allPrograms     = [];
+let allCourses      = [];
 
-// ── State ──────────────────────────────────────────────
-const compareList = [];       // [{program data}]
-const programStore = {};      // id → program data, avoids inline JSON in onclick
-const uniStore = {};
+const uniStore     = {};   // id → university
+const programStore = {};   // id → program
+const compareList  = [];
+
+async function loadData() {
+  [allUniversities, allPrograms, allCourses] = await Promise.all([
+    fetch("data/universities.json").then(r => r.json()),
+    fetch("data/programs.json").then(r => r.json()),
+    fetch("data/courses.json").then(r => r.json()),
+  ]);
+  allUniversities.forEach(u => { uniStore[u.id] = u; });
+  allPrograms.forEach(p => { programStore[p.id] = p; });
+
+  // Attach university name/short_name to programs and courses for display
+  allPrograms.forEach(p => {
+    const u = uniStore[p.university_id] || {};
+    p.university_name  = u.name || "";
+    p.university_short = u.short_name || "";
+  });
+  allCourses.forEach(c => {
+    const u = uniStore[c.university_id] || {};
+    c.university_name  = u.name || "";
+    c.university_short = u.short_name || "";
+  });
+
+  populateUniFilter();
+  renderUniversities();
+  renderPrograms();
+}
 
 // ── Tab switching ──────────────────────────────────────
 document.querySelectorAll(".tab").forEach(btn => {
@@ -24,7 +52,6 @@ function showModal(html) {
   document.getElementById("modal-content").innerHTML = html;
   document.getElementById("modal-overlay").classList.remove("hidden");
 }
-
 document.getElementById("modal-close").addEventListener("click", () => {
   document.getElementById("modal-overlay").classList.add("hidden");
 });
@@ -34,36 +61,31 @@ document.getElementById("modal-overlay").addEventListener("click", e => {
 });
 
 // ── Universities ───────────────────────────────────────
-async function loadUniversities() {
+function renderUniversities() {
   const province = document.getElementById("uni-province").value;
-  const url = province ? `${API}/universities/?province=${encodeURIComponent(province)}` : `${API}/universities/`;
   const grid = document.getElementById("uni-grid");
-  grid.innerHTML = `<div class="loading">Loading…</div>`;
-  try {
-    const data = await fetch(url).then(r => r.json());
-    if (!data.length) { grid.innerHTML = `<div class="empty">No universities found.</div>`; return; }
-    data.forEach(u => { uniStore[u.id] = u; });
-    grid.innerHTML = data.map(u => `
-      <div class="card" data-uni-id="${u.id}">
-        <div class="card-header">
-          <h3>${u.name}</h3>
-          <span class="badge">#${u.rankings.macleans} Maclean's</span>
-        </div>
-        <div class="card-meta">
-          <div class="meta-row"><span class="meta-label">City</span><span class="meta-value">${u.city}, ${u.province}</span></div>
-          <div class="meta-row"><span class="meta-label">QS World</span><span class="meta-value">${rank(u.rankings.qs_world)}</span></div>
-          <div class="meta-row"><span class="meta-label">Acceptance Rate</span><span class="meta-value">${pct(u.admissions.acceptance_rate)}</span></div>
-          <div class="meta-row"><span class="meta-label">Domestic Tuition</span><span class="meta-value">${cad(u.tuition_cad.domestic_min)} – ${cad(u.tuition_cad.domestic_max)}</span></div>
-          <div class="meta-row"><span class="meta-label">Intl Tuition</span><span class="meta-value">${cad(u.tuition_cad.international_min)} – ${cad(u.tuition_cad.international_max)}</span></div>
-        </div>
+  let data = allUniversities;
+  if (province) data = data.filter(u => u.province === province);
+  if (!data.length) { grid.innerHTML = `<div class="empty">No universities found.</div>`; return; }
+
+  grid.innerHTML = data.map(u => `
+    <div class="card" data-uni-id="${u.id}">
+      <div class="card-header">
+        <h3>${u.name}</h3>
+        ${u.macleans_rank ? `<span class="badge">#${u.macleans_rank} Maclean's</span>` : ""}
       </div>
-    `).join("");
-    grid.querySelectorAll(".card").forEach(card => {
-      card.addEventListener("click", () => showUniDetail(uniStore[card.dataset.uniId]));
-    });
-  } catch {
-    grid.innerHTML = `<div class="empty">Could not connect to API. Is the backend running?</div>`;
-  }
+      <div class="card-meta">
+        <div class="meta-row"><span class="meta-label">City</span><span class="meta-value">${u.city}, ${u.province}</span></div>
+        <div class="meta-row"><span class="meta-label">QS World</span><span class="meta-value">${rank(u.qs_world_rank)}</span></div>
+        <div class="meta-row"><span class="meta-label">Acceptance Rate</span><span class="meta-value">${pct(u.overall_acceptance_rate)}</span></div>
+        <div class="meta-row"><span class="meta-label">Domestic Tuition</span><span class="meta-value">${cad(u.domestic_tuition_min)} – ${cad(u.domestic_tuition_max)}</span></div>
+        <div class="meta-row"><span class="meta-label">Intl Tuition</span><span class="meta-value">${cad(u.international_tuition_min)} – ${cad(u.international_tuition_max)}</span></div>
+      </div>
+    </div>
+  `).join("");
+  grid.querySelectorAll(".card").forEach(card => {
+    card.addEventListener("click", () => showUniDetail(uniStore[card.dataset.uniId]));
+  });
 }
 
 function showUniDetail(u) {
@@ -72,109 +94,93 @@ function showUniDetail(u) {
     <div class="modal-section">
       <h4>Location &amp; Info</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>City: </span><span>${u.city}, ${u.province}</span></div>
-        <div class="modal-kv"><span>Founded: </span><span>${u.established_year}</span></div>
-        <div class="modal-kv"><span>Website: </span><span><a class="ext-link" href="${u.website}" target="_blank">Visit site ↗</a></span></div>
+        <div class="modal-kv"><span>City</span><span>${u.city}, ${u.province}</span></div>
+        <div class="modal-kv"><span>Website</span><span><a class="ext-link" href="${u.website}" target="_blank">Visit site ↗</a></span></div>
       </div>
     </div>
     <div class="modal-section">
       <h4>Rankings</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>Maclean's: </span><span>${rank(u.rankings.macleans)}</span></div>
-        <div class="modal-kv"><span>QS World: </span><span>${rank(u.rankings.qs_world)}</span></div>
-        <div class="modal-kv"><span>QS Canada: </span><span>${rank(u.rankings.qs_canada)}</span></div>
-        <div class="modal-kv"><span>Times World: </span><span>${rank(u.rankings.times_world)}</span></div>
+        <div class="modal-kv"><span>Maclean's</span><span>${rank(u.macleans_rank)}</span></div>
+        <div class="modal-kv"><span>QS World</span><span>${rank(u.qs_world_rank)}</span></div>
       </div>
     </div>
     <div class="modal-section">
       <h4>Admissions</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>Acceptance Rate: </span><span>${pct(u.admissions.acceptance_rate)}</span></div>
-        <div class="modal-kv"><span>Intl Acceptance: </span><span>${pct(u.admissions.international_acceptance_rate)}</span></div>
+        <div class="modal-kv"><span>Acceptance Rate</span><span>${pct(u.overall_acceptance_rate)}</span></div>
+        <div class="modal-kv"><span>Intl Acceptance</span><span>${pct(u.international_acceptance_rate)}</span></div>
       </div>
     </div>
     <div class="modal-section">
       <h4>Annual Tuition (CAD)</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>Domestic: </span><span>${cad(u.tuition_cad.domestic_min)} – ${cad(u.tuition_cad.domestic_max)}</span></div>
-        <div class="modal-kv"><span>International: </span><span>${cad(u.tuition_cad.international_min)} – ${cad(u.tuition_cad.international_max)}</span></div>
+        <div class="modal-kv"><span>Domestic</span><span>${cad(u.domestic_tuition_min)} – ${cad(u.domestic_tuition_max)}</span></div>
+        <div class="modal-kv"><span>International</span><span>${cad(u.international_tuition_min)} – ${cad(u.international_tuition_max)}</span></div>
       </div>
     </div>
   `);
 }
 
-document.getElementById("uni-province").addEventListener("change", loadUniversities);
+document.getElementById("uni-province").addEventListener("change", renderUniversities);
 
 // ── Programs ───────────────────────────────────────────
-async function loadPrograms() {
-  const field    = document.getElementById("prog-field").value.trim();
-  const degree   = document.getElementById("prog-degree").value;
-  const tuition  = document.getElementById("prog-tuition").value;
-  const sortBy   = document.getElementById("prog-sort").value;
+function renderPrograms() {
+  const field   = document.getElementById("prog-field").value.trim().toLowerCase();
+  const degree  = document.getElementById("prog-degree").value;
+  const tuition = parseInt(document.getElementById("prog-tuition").value) || Infinity;
+  const sortBy  = document.getElementById("prog-sort").value;
+  const grid    = document.getElementById("prog-grid");
 
-  const params = new URLSearchParams({ sort_by: sortBy, max_domestic_tuition: tuition });
-  if (field)  params.set("field", field);
-  if (degree) params.set("degree_type", degree);
+  let data = allPrograms;
+  if (field)  data = data.filter(p => (p.field || "").toLowerCase().includes(field) || p.name.toLowerCase().includes(field));
+  if (degree) data = data.filter(p => p.degree_type === degree);
+  data = data.filter(p => p.domestic_tuition == null || p.domestic_tuition <= tuition);
 
-  const grid = document.getElementById("prog-grid");
-  grid.innerHTML = `<div class="loading">Loading…</div>`;
-  try {
-    const data = await fetch(`${API}/programs/?${params}`).then(r => r.json());
-    if (!data.length) { grid.innerHTML = `<div class="empty">No programs found.</div>`; return; }
+  if (sortBy === "acceptance_rate") data.sort((a, b) => (a.acceptance_rate ?? 1) - (b.acceptance_rate ?? 1));
+  else if (sortBy === "rank")       data.sort((a, b) => (a.program_rank_national ?? 999) - (b.program_rank_national ?? 999));
+  else if (sortBy === "tuition")    data.sort((a, b) => (a.domestic_tuition ?? 0) - (b.domestic_tuition ?? 0));
 
-    // Populate uni filter for courses tab on first load
-    const uniSel = document.getElementById("course-uni");
-    if (uniSel.options.length === 1) {
-      const unis = [...new Map(data.map(p => [p.university_id, p])).values()];
-      unis.forEach(p => {
-        const o = document.createElement("option");
-        o.value = p.university_id; o.text = p.university_short;
-        uniSel.add(o);
-      });
-    }
+  if (!data.length) { grid.innerHTML = `<div class="empty">No programs found.</div>`; return; }
 
-    data.forEach(p => { programStore[p.id] = p; });
-    grid.innerHTML = data.map(p => {
-      const inCompare = compareList.some(c => c.id === p.id);
-      return `
-        <div class="card" data-prog-id="${p.id}">
-          <div class="card-header">
-            <h3>${p.name}</h3>
-            ${p.rankings.national ? `<span class="badge">#${p.rankings.national} CA</span>` : ""}
-          </div>
-          <div class="card-meta">
-            <div class="meta-row"><span class="meta-label">University</span><span class="meta-value">${p.university_short}</span></div>
-            <div class="meta-row"><span class="meta-label">Faculty</span><span class="meta-value">${p.faculty || "—"}</span></div>
-            <div class="meta-row"><span class="meta-label">Acceptance Rate</span><span class="meta-value">${pct(p.admissions.acceptance_rate)}</span></div>
-            <div class="meta-row"><span class="meta-label">Admission Avg</span><span class="meta-value">${p.admissions.typical_admission_average ? p.admissions.typical_admission_average + "%" : "—"}</span></div>
-            <div class="meta-row"><span class="meta-label">Domestic Tuition</span><span class="meta-value">${cad(p.tuition_cad.domestic)}/yr</span></div>
-            <div class="meta-row"><span class="meta-label">Intl Tuition</span><span class="meta-value">${cad(p.tuition_cad.international)}/yr</span></div>
-          </div>
-          <div class="card-actions">
-            <button class="btn-sm compare-btn ${inCompare ? "compare-added" : ""}" data-prog-id="${p.id}">
-              ${inCompare ? "✓ Comparing" : "+ Compare"}
-            </button>
-            ${p.url ? `<a class="btn-sm" href="${p.url}" target="_blank">View program ↗</a>` : ""}
-          </div>
+  grid.innerHTML = data.map(p => {
+    const inCompare = compareList.some(c => c.id === p.id);
+    return `
+      <div class="card" data-prog-id="${p.id}">
+        <div class="card-header">
+          <h3>${p.name}</h3>
+          ${p.program_rank_national ? `<span class="badge">#${p.program_rank_national} CA</span>` : ""}
         </div>
-      `;
-    }).join("");
-    // Attach events after render
-    grid.querySelectorAll(".card").forEach(card => {
-      card.addEventListener("click", e => {
-        if (e.target.closest(".compare-btn") || e.target.closest("a")) return;
-        showProgDetail(programStore[card.dataset.progId]);
-      });
+        <div class="card-meta">
+          <div class="meta-row"><span class="meta-label">University</span><span class="meta-value">${p.university_short}</span></div>
+          <div class="meta-row"><span class="meta-label">Faculty</span><span class="meta-value">${p.faculty || "—"}</span></div>
+          <div class="meta-row"><span class="meta-label">Acceptance Rate</span><span class="meta-value">${pct(p.acceptance_rate)}</span></div>
+          <div class="meta-row"><span class="meta-label">Admission Avg</span><span class="meta-value">${p.typical_admission_average ? p.typical_admission_average + "%" : "—"}</span></div>
+          <div class="meta-row"><span class="meta-label">Domestic Tuition</span><span class="meta-value">${cad(p.domestic_tuition)}/yr</span></div>
+          <div class="meta-row"><span class="meta-label">Intl Tuition</span><span class="meta-value">${cad(p.international_tuition)}/yr</span></div>
+        </div>
+        <div class="card-actions">
+          <button class="btn-sm compare-btn ${inCompare ? "compare-added" : ""}" data-prog-id="${p.id}">
+            ${inCompare ? "✓ Comparing" : "+ Compare"}
+          </button>
+          ${p.url ? `<a class="btn-sm" href="${p.url}" target="_blank">View program ↗</a>` : ""}
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  grid.querySelectorAll(".card").forEach(card => {
+    card.addEventListener("click", e => {
+      if (e.target.closest(".compare-btn") || e.target.closest("a")) return;
+      showProgDetail(programStore[card.dataset.progId]);
     });
-    grid.querySelectorAll(".compare-btn").forEach(btn => {
-      btn.addEventListener("click", e => {
-        e.stopPropagation();
-        toggleCompare(programStore[btn.dataset.progId], btn);
-      });
+  });
+  grid.querySelectorAll(".compare-btn").forEach(btn => {
+    btn.addEventListener("click", e => {
+      e.stopPropagation();
+      toggleCompare(programStore[btn.dataset.progId], btn);
     });
-  } catch (e) {
-    grid.innerHTML = `<div class="empty">Could not connect to API. Is the backend running?</div>`;
-  }
+  });
 }
 
 function showProgDetail(p) {
@@ -184,73 +190,86 @@ function showProgDetail(p) {
     <div class="modal-section">
       <h4>Admissions</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>Acceptance Rate: </span><span>${pct(p.admissions.acceptance_rate)}</span></div>
-        <div class="modal-kv"><span>Min Average: </span><span>${p.admissions.min_admission_average ? p.admissions.min_admission_average + "%" : "—"}</span></div>
-        <div class="modal-kv"><span>Typical Average: </span><span>${p.admissions.typical_admission_average ? p.admissions.typical_admission_average + "%" : "—"}</span></div>
+        <div class="modal-kv"><span>Acceptance Rate</span><span>${pct(p.acceptance_rate)}</span></div>
+        <div class="modal-kv"><span>Min Average</span><span>${p.min_admission_average ? p.min_admission_average + "%" : "—"}</span></div>
+        <div class="modal-kv"><span>Typical Average</span><span>${p.typical_admission_average ? p.typical_admission_average + "%" : "—"}</span></div>
       </div>
-      ${p.admissions.required_courses ? `<p style="font-size:.82rem;margin-top:.5rem;color:var(--muted)">Required HS courses: ${p.admissions.required_courses}</p>` : ""}
     </div>
     <div class="modal-section">
       <h4>Tuition &amp; Fees (Annual, CAD)</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>Domestic: </span><span>${cad(p.tuition_cad.domestic)}</span></div>
-        <div class="modal-kv"><span>International: </span><span>${cad(p.tuition_cad.international)}</span></div>
-        <div class="modal-kv"><span>Ancillary Fees: </span><span>${cad(p.tuition_cad.ancillary_fees)}</span></div>
+        <div class="modal-kv"><span>Domestic</span><span>${cad(p.domestic_tuition)}</span></div>
+        <div class="modal-kv"><span>International</span><span>${cad(p.international_tuition)}</span></div>
       </div>
     </div>
     <div class="modal-section">
       <h4>Rankings</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>National: </span><span>${rank(p.rankings.national)}</span></div>
-        <div class="modal-kv"><span>QS Subject: </span><span>${rank(p.rankings.qs_subject)}</span></div>
-        ${p.rankings.qs_subject_area ? `<div class="modal-kv" style="grid-column:1/-1"><span>QS Area: </span><span>${p.rankings.qs_subject_area}</span></div>` : ""}
+        <div class="modal-kv"><span>National</span><span>${rank(p.program_rank_national)}</span></div>
       </div>
     </div>
     ${p.url ? `<a class="ext-link" href="${p.url}" target="_blank">View official program page ↗</a>` : ""}
   `);
 }
 
-document.getElementById("prog-search-btn").addEventListener("click", loadPrograms);
+document.getElementById("prog-search-btn").addEventListener("click", renderPrograms);
 document.getElementById("prog-tuition").addEventListener("input", e => {
   document.getElementById("prog-tuition-val").textContent = cad(e.target.value);
 });
 
 // ── Courses ────────────────────────────────────────────
-async function loadCourses() {
-  const search = document.getElementById("course-search").value.trim();
-  const uniId  = document.getElementById("course-uni").value;
-  const level  = document.getElementById("course-level").value;
-
-  const params = new URLSearchParams();
-  if (search) params.set("search", search);
-  if (uniId)  params.set("university_id", uniId);
-  if (level)  params.set("level", level);
-
-  const tbody = document.getElementById("course-tbody");
-  tbody.innerHTML = `<tr><td colspan="6" class="loading">Loading…</td></tr>`;
-  try {
-    const data = await fetch(`${API}/courses/?${params}`).then(r => r.json());
-    if (!data.length) {
-      tbody.innerHTML = `<tr><td colspan="6" class="empty">No courses found.</td></tr>`;
-      return;
-    }
-    tbody.innerHTML = data.slice(0, 200).map(c => `
-      <tr style="cursor:pointer" onclick="loadCourseDetail(${c.id})">
-        <td><strong>${c.code || "—"}</strong></td>
-        <td>${c.name}</td>
-        <td>${c.university_name || "—"}</td>
-        <td>${c.level || "—"}</td>
-        <td>${c.credits || "—"}</td>
-        <td class="prereq-text">${c.prerequisites_text || "—"}</td>
-      </tr>
-    `).join("");
-  } catch {
-    tbody.innerHTML = `<tr><td colspan="6" class="empty">Could not connect to API.</td></tr>`;
-  }
+function populateUniFilter() {
+  const sel = document.getElementById("course-uni");
+  allUniversities.forEach(u => {
+    const o = document.createElement("option");
+    o.value = u.id; o.text = u.short_name;
+    sel.add(o);
+  });
 }
 
-async function loadCourseDetail(id) {
-  const c = await fetch(`${API}/courses/${id}`).then(r => r.json());
+function renderCourses() {
+  const search = document.getElementById("course-search").value.trim().toLowerCase();
+  const uniId  = document.getElementById("course-uni").value;
+  const level  = document.getElementById("course-level").value;
+  const tbody  = document.getElementById("course-tbody");
+
+  if (!search && !uniId && !level) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">Enter a search term or select a university.</td></tr>`;
+    return;
+  }
+
+  let data = allCourses;
+  if (uniId)  data = data.filter(c => c.university_id == uniId);
+  if (level)  data = data.filter(c => c.level == parseInt(level));
+  if (search) data = data.filter(c =>
+    c.name.toLowerCase().includes(search) ||
+    (c.code || "").toLowerCase().includes(search) ||
+    (c.description || "").toLowerCase().includes(search)
+  );
+
+  if (!data.length) {
+    tbody.innerHTML = `<tr><td colspan="6" class="empty">No courses found.</td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = data.slice(0, 200).map(c => `
+    <tr style="cursor:pointer" data-course-id="${c.id}">
+      <td><strong>${c.code || "—"}</strong></td>
+      <td>${c.name}</td>
+      <td>${c.university_short || "—"}</td>
+      <td>${c.level || "—"}</td>
+      <td>${c.credits || "—"}</td>
+      <td class="prereq-text">${c.prerequisites_text || "—"}</td>
+    </tr>
+  `).join("");
+
+  tbody.querySelectorAll("tr").forEach(row => {
+    row.addEventListener("click", () => showCourseDetail(allCourses.find(c => c.id == row.dataset.courseId)));
+  });
+}
+
+function showCourseDetail(c) {
+  if (!c) return;
   showModal(`
     <h2>${c.code ? c.code + " – " : ""}${c.name}</h2>
     <p style="color:var(--muted);font-size:.85rem;margin-bottom:1rem">${c.university_name || ""}</p>
@@ -258,25 +277,17 @@ async function loadCourseDetail(id) {
     <div class="modal-section">
       <h4>Details</h4>
       <div class="modal-grid">
-        <div class="modal-kv"><span>Level: </span><span>${c.level || "—"}</span></div>
-        <div class="modal-kv"><span>Credits: </span><span>${c.credits || "—"}</span></div>
-        <div class="modal-kv"><span>Semester: </span><span>${c.semester || "—"}</span></div>
+        <div class="modal-kv"><span>Level</span><span>${c.level || "—"}</span></div>
+        <div class="modal-kv"><span>Credits</span><span>${c.credits || "—"}</span></div>
       </div>
     </div>
     ${c.prerequisites_text ? `<div class="modal-section"><h4>Prerequisites</h4><p style="font-size:.85rem">${c.prerequisites_text}</p></div>` : ""}
-    ${c.corequisites_text  ? `<div class="modal-section"><h4>Corequisites</h4><p style="font-size:.85rem">${c.corequisites_text}</p></div>` : ""}
-    ${c.exclusions_text    ? `<div class="modal-section"><h4>Exclusions</h4><p style="font-size:.85rem">${c.exclusions_text}</p></div>` : ""}
-    ${(c.prerequisites||[]).length ? `
-      <div class="modal-section">
-        <h4>Prerequisite Courses</h4>
-        ${c.prerequisites.map(p => `<span class="rank-chip">${p.code}</span> `).join("")}
-      </div>` : ""}
     ${c.url ? `<a class="ext-link" href="${c.url}" target="_blank">View on university site ↗</a>` : ""}
   `);
 }
 
-document.getElementById("course-search-btn").addEventListener("click", loadCourses);
-document.getElementById("course-search").addEventListener("keydown", e => { if (e.key === "Enter") loadCourses(); });
+document.getElementById("course-search-btn").addEventListener("click", renderCourses);
+document.getElementById("course-search").addEventListener("keydown", e => { if (e.key === "Enter") renderCourses(); });
 
 // ── Compare ────────────────────────────────────────────
 function toggleCompare(prog, btn) {
@@ -298,17 +309,15 @@ function renderCompare() {
   const grid = document.getElementById("compare-grid");
   const hint = document.querySelector(".hint");
   hint.style.display = compareList.length ? "none" : "block";
-
   grid.innerHTML = compareList.map(p => `
     <div class="compare-card">
-      <h4>${p.university_short} – ${p.field}</h4>
+      <h4>${p.university_short} – ${p.field || p.name}</h4>
       <div class="compare-row"><span>Degree</span><span>${p.degree_type}</span></div>
-      <div class="compare-row"><span>Acceptance</span><span>${pct(p.admissions.acceptance_rate)}</span></div>
-      <div class="compare-row"><span>Typical Avg</span><span>${p.admissions.typical_admission_average ? p.admissions.typical_admission_average + "%" : "—"}</span></div>
-      <div class="compare-row"><span>Domestic</span><span>${cad(p.tuition_cad.domestic)}/yr</span></div>
-      <div class="compare-row"><span>International</span><span>${cad(p.tuition_cad.international)}/yr</span></div>
-      <div class="compare-row"><span>National Rank</span><span>${rank(p.rankings.national)}</span></div>
-      <div class="compare-row"><span>QS Subject</span><span>${rank(p.rankings.qs_subject)}</span></div>
+      <div class="compare-row"><span>Acceptance</span><span>${pct(p.acceptance_rate)}</span></div>
+      <div class="compare-row"><span>Typical Avg</span><span>${p.typical_admission_average ? p.typical_admission_average + "%" : "—"}</span></div>
+      <div class="compare-row"><span>Domestic</span><span>${cad(p.domestic_tuition)}/yr</span></div>
+      <div class="compare-row"><span>International</span><span>${cad(p.international_tuition)}/yr</span></div>
+      <div class="compare-row"><span>National Rank</span><span>${rank(p.program_rank_national)}</span></div>
     </div>
   `).join("");
 }
@@ -316,7 +325,6 @@ function renderCompare() {
 document.getElementById("clear-compare").addEventListener("click", () => {
   compareList.length = 0;
   renderCompare();
-  // Reset all compare buttons
   document.querySelectorAll(".btn-sm.compare-added").forEach(b => {
     b.classList.remove("compare-added");
     b.textContent = "+ Compare";
@@ -324,5 +332,4 @@ document.getElementById("clear-compare").addEventListener("click", () => {
 });
 
 // ── Init ───────────────────────────────────────────────
-loadUniversities();
-loadPrograms();
+loadData();
