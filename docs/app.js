@@ -128,7 +128,7 @@ document.getElementById("uni-province").addEventListener("change", renderUnivers
 function renderPrograms() {
   const field   = document.getElementById("prog-field").value.trim().toLowerCase();
   const degree  = document.getElementById("prog-degree").value;
-  const tuition = parseInt(document.getElementById("prog-tuition").value) || 25000;
+
   const sortBy  = document.getElementById("prog-sort").value;
   const grid    = document.getElementById("prog-grid");
 
@@ -147,7 +147,7 @@ function renderPrograms() {
     });
   }
   if (degree) data = data.filter(p => p.degree_type === degree);
-  data = data.filter(p => p.domestic_tuition == null || p.domestic_tuition <= tuition);
+
 
   if (sortBy === "acceptance_rate") data.sort((a, b) => (a.acceptance_rate ?? 1) - (b.acceptance_rate ?? 1));
   else if (sortBy === "rank")       data.sort((a, b) => (a.program_rank_national ?? 999) - (b.program_rank_national ?? 999));
@@ -225,9 +225,6 @@ function showProgDetail(p) {
 }
 
 document.getElementById("prog-search-btn").addEventListener("click", renderPrograms);
-document.getElementById("prog-tuition").addEventListener("input", e => {
-  document.getElementById("prog-tuition-val").textContent = cad(e.target.value);
-});
 
 // ── Courses ────────────────────────────────────────────
 function populateUniFilter() {
