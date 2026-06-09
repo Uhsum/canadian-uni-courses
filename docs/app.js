@@ -89,36 +89,63 @@ function renderUniversities() {
 }
 
 function showUniDetail(u) {
+  const courses = allCourses.filter(c => c.university_id === u.id);
+  const programs = allPrograms.filter(p => p.university_id === u.id);
+
+  const courseRows = courses.slice(0, 300).map(c => `
+    <tr>
+      <td><strong>${c.code || "—"}</strong></td>
+      <td>${c.name}</td>
+      <td>${c.level || "—"}</td>
+      <td>${c.prerequisites_text || "—"}</td>
+    </tr>
+  `).join("");
+
+  const programCards = programs.map(p => `
+    <div style="padding:.5rem 0;border-bottom:1px solid var(--border)">
+      <strong>${p.name}</strong>
+      <span style="color:var(--muted);font-size:.82rem;margin-left:.5rem">${p.degree_type} · ${p.faculty || ""}</span>
+      <div style="font-size:.82rem;margin-top:.25rem;color:var(--muted)">
+        Acceptance: ${pct(p.acceptance_rate)} &nbsp;|&nbsp; Domestic: ${cad(p.domestic_tuition)}/yr
+      </div>
+    </div>
+  `).join("");
+
   showModal(`
     <h2>${u.name}</h2>
     <div class="modal-section">
-      <h4>Location &amp; Info</h4>
       <div class="modal-grid">
         <div class="modal-kv"><span>City</span><span>${u.city}, ${u.province}</span></div>
         <div class="modal-kv"><span>Website</span><span><a class="ext-link" href="${u.website}" target="_blank">Visit site ↗</a></span></div>
-      </div>
-    </div>
-    <div class="modal-section">
-      <h4>Rankings</h4>
-      <div class="modal-grid">
         <div class="modal-kv"><span>Maclean's</span><span>${rank(u.macleans_rank)}</span></div>
         <div class="modal-kv"><span>QS World</span><span>${rank(u.qs_world_rank)}</span></div>
-      </div>
-    </div>
-    <div class="modal-section">
-      <h4>Admissions</h4>
-      <div class="modal-grid">
         <div class="modal-kv"><span>Acceptance Rate</span><span>${pct(u.overall_acceptance_rate)}</span></div>
-        <div class="modal-kv"><span>Intl Acceptance</span><span>${pct(u.international_acceptance_rate)}</span></div>
+        <div class="modal-kv"><span>Domestic Tuition</span><span>${cad(u.domestic_tuition_min)} – ${cad(u.domestic_tuition_max)}/yr</span></div>
+        <div class="modal-kv"><span>Intl Tuition</span><span>${cad(u.international_tuition_min)} – ${cad(u.international_tuition_max)}/yr</span></div>
       </div>
     </div>
+
+    ${programs.length ? `
     <div class="modal-section">
-      <h4>Annual Tuition (CAD)</h4>
-      <div class="modal-grid">
-        <div class="modal-kv"><span>Domestic</span><span>${cad(u.domestic_tuition_min)} – ${cad(u.domestic_tuition_max)}</span></div>
-        <div class="modal-kv"><span>International</span><span>${cad(u.international_tuition_min)} – ${cad(u.international_tuition_max)}</span></div>
+      <h4>Programs (${programs.length})</h4>
+      ${programCards}
+    </div>` : ""}
+
+    ${courses.length ? `
+    <div class="modal-section">
+      <h4>Courses (${courses.length}${courses.length === 300 ? "+" : ""})</h4>
+      <div style="overflow-x:auto">
+        <table style="width:100%;font-size:.82rem;border-collapse:collapse">
+          <thead><tr style="text-align:left;border-bottom:2px solid var(--border)">
+            <th style="padding:.4rem .6rem">Code</th>
+            <th style="padding:.4rem .6rem">Name</th>
+            <th style="padding:.4rem .6rem">Level</th>
+            <th style="padding:.4rem .6rem">Prerequisites</th>
+          </tr></thead>
+          <tbody>${courseRows}</tbody>
+        </table>
       </div>
-    </div>
+    </div>` : "<p style='color:var(--muted);font-size:.85rem'>No course data scraped yet for this university.</p>"}
   `);
 }
 
