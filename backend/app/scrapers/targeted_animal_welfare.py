@@ -222,7 +222,7 @@ class AnimalWelfareTargetedScraper(BaseScraper):
                     url = f"{MCGILL_BASE}/{url_prefix}-{num}"
                     try:
                         await asyncio.sleep(self.delay)
-                        resp = await client.get(url, headers=self.HEADERS, follow_redirects=False)
+                        resp = await client.get(url, headers=self.HEADERS, follow_redirects=True)
                     except Exception:
                         continue
                     if resp.status_code != 200:
