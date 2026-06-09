@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canadian University Courses</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <header>
+    <div class="header-inner">
+      <h1>🎓 Canadian University Courses</h1>
+      <p>Search programs, courses, rankings, fees &amp; admissions across top Canadian universities</p>
+    </div>
+  </header>
+
+  <main>
+    <!-- Tab Nav -->
+    <nav class="tabs">
+      <button class="tab active" data-tab="universities">Universities</button>
+      <button class="tab" data-tab="programs">Programs</button>
+      <button class="tab" data-tab="courses">Courses</button>
+      <button class="tab" data-tab="compare">Compare</button>
+    </nav>
+
+    <!-- ── UNIVERSITIES TAB ───────────────────────────────── -->
+    <section id="tab-universities" class="tab-content active">
+      <div class="filters">
+        <select id="uni-province">
+          <option value="">All Provinces</option>
+          <option>Ontario</option>
+          <option>British Columbia</option>
+          <option>Quebec</option>
+        </select>
+      </div>
+      <div id="uni-grid" class="card-grid"></div>
+    </section>
+
+    <!-- ── PROGRAMS TAB ───────────────────────────────────── -->
+    <section id="tab-programs" class="tab-content">
+      <div class="filters">
+        <input type="text" id="prog-field" placeholder="Field (e.g. Computer Science)" />
+        <select id="prog-degree">
+          <option value="">Any degree type</option>
+          <option>BSc</option><option>BA</option><option>BEng</option>
+          <option>BCom</option><option>BCS</option><option>BSE</option><option>BHSc</option>
+        </select>
+        <label>Max domestic tuition: <span id="prog-tuition-val">$20,000</span>
+          <input type="range" id="prog-tuition" min="2500" max="20000" step="500" value="20000" />
+        </label>
+        <select id="prog-sort">
+          <option value="program_rank_national">Sort: National Rank</option>
+          <option value="acceptance_rate">Sort: Acceptance Rate</option>
+          <option value="domestic_tuition">Sort: Domestic Tuition</option>
+          <option value="typical_admission_average">Sort: Admission Average</option>
+        </select>
+        <button id="prog-search-btn" class="btn-primary">Search</button>
+      </div>
+      <div id="prog-grid" class="card-grid"></div>
+    </section>
+
+    <!-- ── COURSES TAB ────────────────────────────────────── -->
+    <section id="tab-courses" class="tab-content">
+      <div class="filters">
+        <input type="text" id="course-search" placeholder="Search course name or code..." />
+        <select id="course-uni">
+          <option value="">All Universities</option>
+        </select>
+        <select id="course-level">
+          <option value="">Any level</option>
+          <option value="100">100-level (First year)</option>
+          <option value="200">200-level (Second year)</option>
+          <option value="300">300-level (Third year)</option>
+          <option value="400">400-level (Fourth year)</option>
+        </select>
+        <button id="course-search-btn" class="btn-primary">Search</button>
+      </div>
+      <div id="course-table-wrap">
+        <table id="course-table">
+          <thead><tr>
+            <th>Code</th><th>Name</th><th>University</th>
+            <th>Level</th><th>Credits</th><th>Prerequisites</th>
+          </tr></thead>
+          <tbody id="course-tbody"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- ── COMPARE TAB ────────────────────────────────────── -->
+    <section id="tab-compare" class="tab-content">
+      <p class="hint">Select programs from the Programs tab to compare side-by-side.</p>
+      <div id="compare-grid" class="compare-grid"></div>
+      <button id="clear-compare" class="btn-secondary">Clear all</button>
+    </section>
+  </main>
+
+  <!-- Detail Modal -->
+  <div id="modal-overlay" class="hidden">
+    <div id="modal">
+      <button id="modal-close">✕</button>
+      <div id="modal-content"></div>
+    </div>
+  </div>
+
+  <footer>
+    <p>Data sourced from public university websites · Rankings: Maclean's 2024, QS 2025 · Fees: 2024-25 academic year</p>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
